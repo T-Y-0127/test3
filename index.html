@@ -1,0 +1,532 @@
+<!DOCTYPE html>
+<html lang="ja">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0, viewport-fit=cover">
+<meta http-equiv="Cache-Control" content="no-cache, no-store, must-revalidate">
+<meta http-equiv="Pragma" content="no-cache">
+<meta http-equiv="Expires" content="0">
+<title>沖縄 釣果・海況マップ</title>
+<link rel="stylesheet" href="https://unpkg.com/leaflet@1.9.4/dist/leaflet.css"/>
+<style>
+  @import url('https://fonts.googleapis.com/css2?family=Noto+Sans+JP:wght@400;500;700&family=DM+Mono:wght@400;500&display=swap');
+
+  :root {
+    --ocean-deep: #0a1628;
+    --ocean-mid: #0d2240;
+    --ocean-light: #163a5f;
+    --ocean-surf: #1a5276;
+    --teal: #00c9a7;
+    --teal-dim: #00a389;
+    --amber: #f5a623;
+    --coral: #ff6b6b;
+    --sky: #56ccf2;
+    --text-primary: #e8f4f8;
+    --text-secondary: #8ab4c8;
+    --text-muted: #4a7a94;
+    --border: rgba(0, 201, 167, 0.15);
+    --border-bright: rgba(0, 201, 167, 0.4);
+    --card-bg: rgba(5, 15, 30, 0.95);
+    --panel-bg: rgba(5, 12, 25, 0.97);
+  }
+
+  * { margin: 0; padding: 0; box-sizing: border-box; }
+
+  html, body {
+    font-family: 'Noto Sans JP', sans-serif;
+    background: var(--ocean-deep);
+    color: var(--text-primary);
+    height: 100%;
+    margin: 0;
+    padding: 0;
+    overflow: hidden;
+  }
+  body {
+    display: flex;
+    flex-direction: column;
+  }
+
+  /* ===== HEADER ===== */
+  #header {
+    background: var(--panel-bg);
+    border-bottom: 1px solid var(--border-bright);
+    display: flex;
+    flex-direction: column;
+    gap: 6px;
+    padding: 8px 12px;
+    padding-top: max(8px, env(safe-area-inset-top));
+    padding-left: max(12px, env(safe-area-inset-left));
+    padding-right: max(12px, env(safe-area-inset-right));
+    flex-shrink: 0;
+    z-index: 1000;
+  }
+  #header-row1 {
+    display: flex;
+    align-items: center;
+    justify-content: space-between;
+    gap: 8px;
+  }
+  #header-row2 {
+    display: flex;
+    align-items: center;
+    gap: 6px;
+    flex-wrap: wrap;
+  }
+
+  #header h1 {
+    font-size: 15px;
+    font-weight: 700;
+    color: var(--teal);
+    letter-spacing: 0.05em;
+    display: flex;
+    align-items: center;
+    gap: 8px;
+  }
+
+  #header h1::before {
+    content: '';
+    display: inline-block;
+    width: 8px; height: 8px;
+    border-radius: 50%;
+    background: var(--teal);
+    box-shadow: 0 0 8px var(--teal);
+    animation: pulse 2s infinite;
+  }
+
+  @keyframes pulse {
+    0%,100% { opacity: 1; transform: scale(1); }
+    50% { opacity: 0.6; transform: scale(0.85); }
+  }
+
+  .header-controls {
+    display: flex;
+    align-items: center;
+    gap: 6px;
+    flex-wrap: wrap;
+  }
+
+  .layer-group {
+    display: flex;
+    background: var(--ocean-mid);
+    border: 1px solid var(--border);
+    border-radius: 8px;
+    overflow: hidden;
+  }
+
+  .layer-btn {
+    padding: 5px 10px;
+    font-size: 11px;
+    font-family: 'Noto Sans JP', sans-serif;
+    border: none;
+    background: transparent;
+    color: var(--text-secondary);
+    cursor: pointer;
+    transition: all 0.2s;
+    white-space: nowrap;
+  }
+  .layer-btn:not(:last-child) { border-right: 1px solid var(--border); }
+  .layer-btn.active { background: var(--teal); color: var(--ocean-deep); font-weight: 700; }
+  .layer-btn:hover:not(.active) { background: var(--ocean-light); color: var(--text-primary); }
+
+  #layer-group { transition: opacity 0.2s; }
+  #layer-group.disabled { opacity: 0.35; pointer-events: none; }
+
+  #refresh-btn {
+    padding: 6px 12px;
+    font-size: 12px;
+    font-family: 'Noto Sans JP', sans-serif;
+    border: 1px solid var(--border-bright);
+    border-radius: 8px;
+    background: transparent;
+    color: var(--teal);
+    cursor: pointer;
+    transition: all 0.2s;
+  }
+  #refresh-btn:hover { background: var(--teal); color: var(--ocean-deep); }
+
+  /* ===== MAP ===== */
+  #map-wrap {
+    flex: 1;
+    position: relative;
+    overflow: hidden;
+    min-height: 0; /* flex子要素の高さ縮小を許可 */
+  }
+
+  #map {
+    position: absolute;
+    top: 0; left: 0; right: 0; bottom: 0;
+    width: 100%;
+    height: 100%;
+  }
+
+  /* Leaflet tile dark filter */
+  /* 衛星写真タイルはフィルターなし */
+
+  /* ===== WEATHER POPUP (Leaflet) ===== */
+  .wx-popup {
+    background: var(--card-bg);
+    border: 1px solid var(--border-bright);
+    border-radius: 12px;
+    padding: 12px 16px;
+    min-width: 160px;
+    -webkit-backdrop-filter: blur(12px);
+  backdrop-filter: blur(12px);
+    font-family: 'Noto Sans JP', sans-serif;
+  }
+  .wx-popup .wx-name { font-size: 13px; font-weight: 700; color: var(--teal); margin-bottom: 8px; }
+  .wx-popup .wx-row { display: flex; justify-content: space-between; align-items: center; margin-bottom: 4px; font-size: 12px; }
+  .wx-popup .wx-key { color: var(--text-muted); }
+  .wx-popup .wx-val { color: var(--text-primary); font-weight: 500; font-family: 'DM Mono', monospace; }
+  .wx-popup .wx-wave { font-size: 18px; font-weight: 700; color: var(--sky); margin: 6px 0 2px; text-align: center; }
+  .wx-popup .wx-wave-label { font-size: 10px; color: var(--text-muted); text-align: center; }
+
+  /* Custom marker */
+  .wx-label {
+    background: rgba(5,12,25,0.82);
+    border: 1px solid;
+    border-radius: 8px;
+    padding: 4px 8px;
+    font-family: 'Noto Sans JP', sans-serif;
+    font-size: 10px;
+    color: var(--text-primary);
+    white-space: nowrap;
+    cursor: pointer;
+    -webkit-backdrop-filter: blur(4px);
+    backdrop-filter: blur(4px);
+    transition: transform 0.15s, background 0.15s;
+    text-align: center;
+    min-width: 64px;
+  }
+  .wx-label:hover { transform: scale(1.08); background: rgba(10,22,40,0.95); }
+  .wx-label-top { display: flex; align-items: center; justify-content: center; gap: 3px; }
+  .wx-label .m-name { font-weight: 700; color: var(--text-primary); font-size: 10px; }
+  .wx-label .m-icon { font-size: 13px; }
+  .wx-wind-row { display: flex; align-items: center; justify-content: center; gap: 3px; margin-top: 2px; }
+  .wind-arrow { width: 12px; height: 12px; flex-shrink: 0; }
+  .m-wind { font-size: 10px; font-family: 'DM Mono', monospace; font-weight: 500; }
+
+  /* ポップアップ内コンパス */
+  .wx-wind-block { display: flex; align-items: center; gap: 10px; margin: 8px 0 4px; }
+  .wind-compass { display: flex; flex-direction: column; align-items: center; gap: 3px; }
+  .compass-ring {
+    position: relative; width: 40px; height: 40px;
+    border: 1px solid rgba(255,255,255,0.2); border-radius: 50%;
+    background: rgba(255,255,255,0.04);
+  }
+  .compass-n,.compass-s,.compass-e,.compass-w {
+    position: absolute; font-size: 8px; color: var(--text-muted);
+    line-height: 1;
+  }
+  .compass-n { top: 1px; left: 50%; transform: translateX(-50%); }
+  .compass-s { bottom: 1px; left: 50%; transform: translateX(-50%); }
+  .compass-e { right: 1px; top: 50%; transform: translateY(-50%); }
+  .compass-w { left: 1px; top: 50%; transform: translateY(-50%); }
+  .compass-label { font-size: 10px; font-weight: 700; }
+  .wind-detail { flex: 1; }
+  .wind-speed { font-size: 18px; font-weight: 700; font-family: 'DM Mono', monospace; line-height: 1.2; }
+  .wind-badge {
+    display: inline-block; font-size: 10px; padding: 1px 6px;
+    border-radius: 4px; margin-top: 3px;
+  }
+  .wx-divider { border-top: 1px solid rgba(255,255,255,0.08); margin: 8px 0; }
+
+  /* ===== HEATMAP CANVAS ===== */
+  #heatmap-canvas {
+    position: absolute;
+    top: 0; left: 0;
+    width: 100%; height: 100%;
+    pointer-events: none;
+    z-index: 400;
+    display: block;   /* JS で制御 */
+  }
+
+  /* ===== LEGEND ===== */
+  #legend {
+    position: absolute;
+    bottom: 40px; right: 8px;
+    z-index: 800;
+    background: var(--panel-bg);
+    border: 1px solid var(--border);
+    border-radius: 10px;
+    padding: 10px 14px;
+    font-size: 11px;
+  }
+  #legend-pin .leg-row { display: flex; align-items: center; gap: 7px; margin-bottom: 5px; color: var(--text-secondary); }
+  #legend-pin .leg-dot { width: 9px; height: 9px; border-radius: 50%; flex-shrink: 0; }
+  #legend-heat { display: none; }
+  #legend-heat .grad-bar { width: 100px; height: 8px; border-radius: 4px; background: linear-gradient(to right,#00c9a7,#f5a623,#ff6b6b); margin: 4px 0; }
+  #legend-heat .grad-labels { display: flex; justify-content: space-between; font-size: 10px; color: var(--text-muted); }
+
+  /* ===== STATUS BAR ===== */
+  #status {
+    position: absolute;
+    top: 10px; left: 50%;
+    transform: translateX(-50%);
+    z-index: 900;
+    background: var(--panel-bg);
+    border: 1px solid var(--border);
+    border-radius: 20px;
+    padding: 5px 14px;
+    font-size: 11px;
+    color: var(--text-secondary);
+    pointer-events: none;
+    transition: opacity 0.4s;
+  }
+
+  /* ===== CLICK HINT ===== */
+  #click-hint {
+    position: absolute;
+    bottom: 28px; left: 50%;
+    transform: translateX(-50%);
+    z-index: 800;
+    background: rgba(0,0,0,0.6);
+    color: var(--text-secondary);
+    font-size: 11px;
+    padding: 5px 14px;
+    border-radius: 20px;
+    pointer-events: none;
+    white-space: nowrap;
+  }
+
+  /* ===== PHOTO PIN MARKER ===== */
+  .photo-marker {
+    width: 30px; height: 30px;
+    border-radius: 50%;
+    background: #534AB7;
+    border: 2.5px solid #fff;
+    display: flex; align-items: center; justify-content: center;
+    font-size: 12px; font-weight: 700;
+    color: #fff;
+    cursor: pointer;
+    box-shadow: 0 2px 8px rgba(83,74,183,0.5);
+    font-family: 'Noto Sans JP', sans-serif;
+    transition: transform 0.15s;
+  }
+  .photo-marker:hover { transform: scale(1.15); }
+
+  /* ===== MODAL ===== */
+  #modal-overlay {
+    display: none;
+    position: fixed;
+    top: 0; left: 0; right: 0; bottom: 0;
+    background: rgba(0,0,0,0.7);
+    z-index: 10000;
+    align-items: center;
+    justify-content: center;
+    -webkit-backdrop-filter: blur(4px);
+    backdrop-filter: blur(4px);
+    padding: env(safe-area-inset-top) env(safe-area-inset-right) env(safe-area-inset-bottom) env(safe-area-inset-left);
+  }
+  #modal-overlay.show { display: flex; }
+
+  #modal {
+    background: var(--panel-bg);
+    border: 1px solid var(--border-bright);
+    border-radius: 16px;
+    padding: 16px;
+    width: min(400px, 96vw);
+    max-height: 85vh;
+    overflow-y: auto;
+    position: relative;
+  }
+
+  #modal h2 {
+    font-size: 15px;
+    font-weight: 700;
+    color: var(--teal);
+    margin-bottom: 4px;
+  }
+
+  #modal .modal-coord {
+    font-size: 11px;
+    color: var(--text-muted);
+    font-family: 'DM Mono', monospace;
+    margin-bottom: 16px;
+  }
+
+  #modal-grid {
+    display: grid;
+    grid-template-columns: repeat(3, 1fr);
+    gap: 8px;
+    margin-bottom: 16px;
+  }
+
+  .modal-thumb {
+    aspect-ratio: 1;
+    object-fit: cover;
+    border-radius: 8px;
+    border: 1px solid var(--border);
+    cursor: pointer;
+    transition: transform 0.15s;
+    width: 100%;
+  }
+  .modal-thumb:hover { transform: scale(1.03); }
+
+  .modal-add {
+    aspect-ratio: 1;
+    border-radius: 8px;
+    border: 1.5px dashed var(--border-bright);
+    background: var(--ocean-mid);
+    display: flex; flex-direction: column; align-items: center; justify-content: center;
+    cursor: pointer;
+    color: var(--teal);
+    font-size: 22px;
+    transition: background 0.15s;
+  }
+  .modal-add span { font-size: 10px; color: var(--text-muted); margin-top: 4px; font-family: 'Noto Sans JP', sans-serif; }
+  .modal-add:hover { background: var(--ocean-light); }
+
+  .modal-uploading { color: var(--text-muted); font-size: 11px; text-align: center; padding: 8px 0; }
+
+  #modal-caption-input {
+    width: 100%;
+    background: var(--ocean-mid);
+    border: 1px solid var(--border);
+    border-radius: 8px;
+    color: var(--text-primary);
+    font-family: 'Noto Sans JP', sans-serif;
+    font-size: 13px;
+    padding: 8px 12px;
+    margin-bottom: 12px;
+    outline: none;
+    resize: none;
+  }
+  #modal-caption-input:focus { border-color: var(--teal); }
+  #modal-caption-input::placeholder { color: var(--text-muted); }
+
+  .modal-caption-existing {
+    font-size: 12px;
+    color: var(--text-secondary);
+    margin-bottom: 12px;
+    padding: 8px 12px;
+    background: var(--ocean-mid);
+    border-radius: 8px;
+    border-left: 3px solid var(--teal);
+  }
+
+  #modal-close {
+    width: 100%;
+    padding: 9px;
+    border: 1px solid var(--border);
+    border-radius: 8px;
+    background: transparent;
+    color: var(--text-secondary);
+    font-family: 'Noto Sans JP', sans-serif;
+    font-size: 13px;
+    cursor: pointer;
+    transition: all 0.2s;
+  }
+  #modal-close:hover { background: var(--ocean-light); color: var(--text-primary); }
+
+  #modal-delete {
+    width: 100%;
+    padding: 9px;
+    border: 1px solid rgba(255,107,107,0.3);
+    border-radius: 8px;
+    background: transparent;
+    color: var(--coral);
+    font-family: 'Noto Sans JP', sans-serif;
+    font-size: 12px;
+    cursor: pointer;
+    margin-bottom: 8px;
+    transition: all 0.2s;
+  }
+  #modal-delete:hover { background: rgba(255,107,107,0.1); }
+
+  #file-input { display: none; }
+
+  /* ===== LIGHTBOX ===== */
+  #lightbox {
+    display: none;
+    position: fixed;
+    top: 0; left: 0; right: 0; bottom: 0;
+    background: rgba(0,0,0,0.9);
+    z-index: 20000;
+    align-items: center;
+    justify-content: center;
+    cursor: pointer;
+  }
+  #lightbox.show { display: flex; }
+  #lightbox img { max-width: 90vw; max-height: 90vh; border-radius: 8px; }
+
+  /* setup-overlay CSS 削除済み */
+</style>
+</head>
+<body>
+
+<!-- ===== HEADER ===== -->
+<div id="header">
+  <div id="header-row1">
+    <h1>沖縄 釣果・海況マップ</h1>
+    <button id="refresh-btn" onclick="fetchWeather()">↺ 更新</button>
+  </div>
+  <div id="header-row2">
+    <button class="layer-btn active" id="btn-overlay" onclick="toggleOverlay()">気象 ON</button>
+    <div class="layer-group" id="layer-group">
+      <button class="layer-btn active" id="btn-pin">雨雲</button>
+    </div>
+    <div class="layer-group" id="forecast-group">
+      <button class="layer-btn active" id="fc-0"  onclick="setForecast(0)">現在</button>
+      <button class="layer-btn"        id="fc-1"  onclick="setForecast(1)">+1h</button>
+      <button class="layer-btn"        id="fc-2"  onclick="setForecast(2)">+2h</button>
+      <button class="layer-btn"        id="fc-3"  onclick="setForecast(3)">+3h</button>
+      <button class="layer-btn"        id="fc-6"  onclick="setForecast(6)">+6h</button>
+      <button class="layer-btn"        id="fc-12" onclick="setForecast(12)">+12h</button>
+      <button class="layer-btn"        id="fc-24" onclick="setForecast(24)">+24h</button>
+    </div>
+    <button class="layer-btn" id="btn-wind" onclick="toggleWind()">風向き OFF</button>
+  </div>
+</div>
+
+<!-- ===== MAP ===== -->
+<div id="map-wrap">
+  <div id="map"></div>
+  <canvas id="heatmap-canvas"></canvas>
+  <div id="status">データ読み込み中...</div>
+  <div id="click-hint">地図をタップして写真を投稿</div>
+  <div id="legend">
+    <div id="legend-pin">
+      <div style="font-size:11px;color:var(--text-muted);margin-bottom:5px">雨雲レーダー</div>
+      <div class="leg-row"><div class="leg-dot" style="background:rgba(50,220,120,0.8)"></div>弱雨</div>
+      <div class="leg-row"><div class="leg-dot" style="background:rgba(255,160,0,0.85)"></div>強雨</div>
+      <div class="leg-row"><div class="leg-dot" style="background:rgba(255,60,20,0.9)"></div>激しい雨</div>
+      <div style="border-top:0.5px solid var(--border);margin:6px 0 5px"></div>
+      <div style="font-size:11px;color:var(--text-muted);margin-bottom:5px">風速 (m/s)</div>
+      <div class="leg-row"><div class="leg-dot" style="background:rgba(180,180,180,0.9)"></div>&lt; 1m/s</div>
+      <div class="leg-row"><div class="leg-dot" style="background:rgba(130,220,255,0.9)"></div>1〜3m/s</div>
+      <div class="leg-row"><div class="leg-dot" style="background:rgba(40,130,255,0.95)"></div>3〜5m/s</div>
+      <div class="leg-row"><div class="leg-dot" style="background:rgba(255,220,0,0.95)"></div>5〜10m/s</div>
+      <div class="leg-row"><div class="leg-dot" style="background:rgba(255,140,0,0.97)"></div>10〜15m/s</div>
+      <div class="leg-row"><div class="leg-dot" style="background:rgba(255,50,50,0.97)"></div>15m/s〜</div>
+      <div style="border-top:0.5px solid var(--border);margin:6px 0 5px"></div>
+      <div class="leg-row"><div class="leg-dot" style="background:#534AB7"></div>写真スポット</div>
+    </div>
+  </div>
+</div>
+
+<!-- ===== PHOTO MODAL ===== -->
+<div id="modal-overlay">
+  <div id="modal">
+    <h2 id="modal-title">写真スポット</h2>
+    <div class="modal-coord" id="modal-coord"></div>
+    <div id="modal-grid"></div>
+    <input type="file" id="file-input" accept="image/*" multiple>
+    <button id="modal-delete" onclick="deletePin()" style="display:none">このスポットを削除</button>
+    <button id="modal-close" onclick="closeModal()">閉じる</button>
+  </div>
+</div>
+
+<!-- ===== LIGHTBOX ===== -->
+<div id="lightbox" onclick="closeLightbox()">
+  <img id="lightbox-img" src="" alt="">
+</div>
+
+<!-- 外部ライブラリ -->
+<script src="https://unpkg.com/leaflet@1.9.4/dist/leaflet.js"></script>
+<script src="https://unpkg.com/@supabase/supabase-js@2"></script>
+
+<!-- アプリ本体（ES Modules） -->
+<script type="module" src="src/main.js"></script>
+
+</body>
+</html>
