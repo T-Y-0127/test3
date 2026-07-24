@@ -6,7 +6,12 @@ import { isOnLand }       from '../utils/geoUtils.js';
 
 export function drawOverlay() {
   const canvas = document.getElementById('heatmap-canvas');
-  if (!state.overlayVisible) { canvas.style.display = 'none'; return; }
+
+  // 雨雲も風矢印も両方OFFなら非表示
+  if (!state.overlayVisible && !state.windVisible) {
+    canvas.style.display = 'none';
+    return;
+  }
   canvas.style.display = 'block';
 
   const wrap = document.getElementById('map-wrap');
@@ -27,23 +32,25 @@ export function drawOverlay() {
     return { px: p.x, py: p.y, st, d };
   });
 
-  // ── 雨雲レーダー ブロック塗り ──
-  const CELL = Math.max(4, Math.round(160 / zoom));
-  for (let cy = 0; cy < H; cy += CELL) {
-    for (let cx = 0; cx < W; cx += CELL) {
-      const mx = cx + CELL / 2, my = cy + CELL / 2;
-      let best = null, bestD2 = Infinity;
-      for (const p of pts) {
-        const d2 = (mx - p.px) ** 2 + (my - p.py) ** 2;
-        if (d2 < bestD2) { bestD2 = d2; best = p; }
+  // ── 雨雲レーダー ブロック塗り（overlayVisible のときのみ）──
+  if (state.overlayVisible) {
+    const CELL = Math.max(4, Math.round(160 / zoom));
+    for (let cy = 0; cy < H; cy += CELL) {
+      for (let cx = 0; cx < W; cx += CELL) {
+        const mx = cx + CELL / 2, my = cy + CELL / 2;
+        let best = null, bestD2 = Infinity;
+        for (const p of pts) {
+          const d2 = (mx - p.px) ** 2 + (my - p.py) ** 2;
+          if (d2 < bestD2) { bestD2 = d2; best = p; }
+        }
+        if (!best) continue;
+        const fc    = best.d.forecast?.[state.forecastOffset] ?? best.d.forecast?.[0];
+        const wcode = fc?.wcode ?? best.d.wcode ?? 0;
+        const c     = radarColor(wcode);
+        if (!c) continue;
+        ctx.fillStyle = `rgba(${c.r},${c.g},${c.b},${c.a})`;
+        ctx.fillRect(cx, cy, CELL, CELL);
       }
-      if (!best) continue;
-      const fc    = best.d.forecast?.[state.forecastOffset] ?? best.d.forecast?.[0];
-      const wcode = fc?.wcode ?? best.d.wcode ?? 0;
-      const c     = radarColor(wcode);
-      if (!c) continue;
-      ctx.fillStyle = `rgba(${c.r},${c.g},${c.b},${c.a})`;
-      ctx.fillRect(cx, cy, CELL, CELL);
     }
   }
 

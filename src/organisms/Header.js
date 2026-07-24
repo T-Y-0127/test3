@@ -14,19 +14,18 @@ export function toggleOverlay() {
   if (state.overlayVisible) {
     btn.classList.add('active');
     btn.textContent = '気象 ON';
-    canvas.style.display = '';
     lg?.classList.remove('disabled');
     fg?.classList.remove('disabled');
     state.wxMarkers.forEach(m => { const el = m.getElement(); if (el) el.style.display = ''; });
-    drawOverlay();
   } else {
     btn.classList.remove('active');
     btn.textContent = '気象 OFF';
-    canvas.style.display = 'none';
     lg?.classList.add('disabled');
     fg?.classList.add('disabled');
     state.wxMarkers.forEach(m => { const el = m.getElement(); if (el) el.style.display = 'none'; });
   }
+  // canvas の表示/非表示は drawOverlay に委ねる（風矢印が独立して動くため）
+  drawOverlay();
 }
 
 export function toggleWind() {
